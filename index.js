@@ -1,15 +1,12 @@
 require("dotenv").config();
 
 const express = require("express");
-const res = require("express/lib/response");
+// const res = require("express/lib/response");
 const fetch = require("node-fetch");
 const redis = require("redis");
+const client = redis.createClient();
 
 const PORT = process.env.PORT || 5001;
-const REDIS_PORT = process.env.REDIS_PORT || 6379;
-
-const client = redis.createClient(REDIS_PORT);
-client.connect();
 
 const app = express();
 
@@ -29,7 +26,7 @@ async function getRepos(req, res, next) {
     const repos = data.public_repos;
 
     //set to data t0 Redis
-    client.setEx(username, 3600, repos);
+    client.setex(username, 3600, repos);
 
     res.send(setResponse(username, repos));
   } catch (err) {
@@ -38,7 +35,26 @@ async function getRepos(req, res, next) {
   }
 }
 
-app.get("/repos/:username", getRepos);
+//cache middleware
+
+function cache(req, res, next) {
+  const { username } = req.params;
+
+  client.get(username, (err, data) => {
+    console.log("reply cachec");
+    if (err) {
+      throw err;
+    }
+    if (data !== null) {
+      //if there is already cached data dont continue to next and just send this response
+      res.send(setResponse(username, data));
+    } else {
+      next();
+    }
+  });
+}
+
+app.get("/repos/:username", cache, getRepos); //in order to use caching middleware pass in as second param
 
 app.get("/test", (req, res) => {
   res.send("hi");
